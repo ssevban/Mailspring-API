@@ -1,4 +1,8 @@
 node_modules/
 data/
 .git/
+.github/
 .env
+test/
+docs/
+deploy/

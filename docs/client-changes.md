@@ -4,15 +4,9 @@ Bu dosya sadece liste ve öneri. Client kodu bu session'da değiştirilmedi.
 
 Referans: ssevban/Mailspring `6c884a6` (2026-10-25). Aşağıdaki dosyalar upstream Foundry376/Mailspring `4e6ae2b` ile byte byte aynı, satır numaraları ikisi için de geçerli. Yollar `app/` altına göredir.
 
-Hedef host'lar (`docs/compat.md` ve `deploy/Caddyfile` ile aynı):
+Tek host: `https://link.example.com` (`deploy/nginx.conf`). Identity, metadata sync ve tracking hepsi bu host'ta. Aşağıdaki diff'lerde geçen `id.example.com`, `link.example.com` ve `share.example.com`'un hepsi yerine `link.example.com` yaz.
 
-```text
-id.<DOMAIN>     identity + metadata + deltas + onboarding/dashboard   (rootURLForServer, IDENTITY_SERVER)
-link.<DOMAIN>   /o/ /open/ /link/                                    (open/link tracking PLUGIN_URL)
-share.<DOMAIN>  /thread/ /page/ /asset/ /signature-assets/           (backend SHARE_URL)
-```
-
-`<DOMAIN>` = `example.com` (yani `id.example.com`, `link.example.com`, `share.example.com`). Aşağıdaki diff'lerde `example.com` yerine `example.com` yaz.
+Tracking için identity'yi de bu host'a çevirmek ŞART. Open/click sayıları client'a tracking URL'inden değil metadata sync'ten (`/metadata`, `/deltas/.../streaming`) geliyor. Identity resmi server'da kalırsa pixel senin server'ına düşer ama sayı client'ına hiç ulaşmaz.
 
 ## 1. Zorunlu (backend'e bağlı)
 
@@ -53,13 +47,9 @@ Minimum değişiklik:
 
 Satır 175 için de aynı host'u yazmak tutarlılık için yeterli (`link.example.com/open/`).
 
-### 1.4 thread sharing URL: `internal_packages/thread-sharing/lib/main.tsx:48`
+### 1.4 thread sharing: ATLA
 
-```ts
-  return `https://share.example.com/thread/${identity.id}/${metadata.key}`;
-```
-
-Değişmezse "share thread" linki `shared.getmailspring.com`'a gider, orada senin datan yok. Backend route'u `/thread/<identityId>/<key>`, aynı şekil. `thread-sharing/package.json:4-7`'deki `serverUrl` kodda okunmuyor (grep: 0 kullanım), değiştirmen gerekmiyor.
+Kullanılmıyor, server'da `/thread/` ve `/page/` nginx'te 404. `internal_packages/thread-sharing/lib/main.tsx:48` `shared.getmailspring.com`'a hardcode kalabilir; istersen thread-sharing plugin'ini client'ta tamamen kaldırırız (client düzenlemeleriyle birlikte).
 
 ### 1.5 auto-update: `src/browser/autoupdate-manager.ts`
 
@@ -83,7 +73,7 @@ ve `check()` (satır 165) başına:
 
 ### 1.6 signature ikonları: `internal_packages/composer-signature/lib/templates.tsx:8-61`
 
-`https://www.getmailspring.com/signature-assets/*.gif` hardcode. Bunlar gönderdiğin maillerin içine gömülüyor; değişmezse alıcı her açışta Foundry376 sunucusundan resim çeker. Backend artık `share.<DOMAIN>/signature-assets/` altında serve ediyor:
+`https://www.getmailspring.com/signature-assets/*.gif` hardcode. Bunlar gönderdiğin maillerin içine gömülüyor; değişmezse alıcı her açışta Foundry376 sunucusundan resim çeker. Backend `/signature-assets/` altında serve ediyor:
 
 ```ts
     src="https://share.example.com/signature-assets/fb.gif"
@@ -165,8 +155,8 @@ Hedef: Windows ve macOS. Linux adımları referans için duruyor. Build adımlar
 
 ## 4. Doğrulama (build sonrası)
 
-1. Preferences > Subscription > Sign in: webview `https://id.<DOMAIN>/onboarding` açmalı, `manage.js user add` ile oluşturduğun kullanıcıyla login.
+1. Preferences > Subscription > Sign in: webview `https://link.example.com/onboarding` açmalı, `manage.js user add` ile oluşturduğun kullanıcıyla login.
 2. Hesap ekle, mailsync log'unda `Metadata delta stream starting...` görünmeli (`MetadataWorker.cpp:143`).
-3. Read receipt + link tracking açık bir mail gönder, gönderilen mailin kaynağında `https://link.<DOMAIN>/o/...png` ve `https://link.<DOMAIN>/link/...` olmalı.
+3. Read receipt + link tracking açık bir mail gönder, gönderilen mailin kaynağında `https://link.example.com/o/...png` ve `https://link.example.com/link/...` olmalı.
 4. Alıcı tarafında aç/tıkla, gönderen client'ta birkaç saniye içinde "opened"/"clicked" görünmeli.
 5. Gönderdiğin maile gelen reply'ı aç: open sayısı ARTMAMALI (1.3).

@@ -2,6 +2,14 @@
 
 Tarih: 2026-10-27
 
+## 0. Güncel durum (aşağıdaki bölümlerden önce bunu oku)
+
+- Deploy tek host: `link.example.com`, host'taki nginx arkasında (`deploy/nginx.conf`). Bu raporda geçen id./link./share. ayrımı ve Caddy iptal; Caddyfile silindi.
+- Thread paylaşımı ve paylaşılan aktivite sayfaları kullanılmıyor: `/thread/` ve `/page/` nginx'te 404.
+- `/link`: alıcıya hiçbir durumda ara sayfa gösterilmiyor (bkz. §6).
+- Dockerfile multi-stage: derleme araçları (python3, make, g++) sadece build stage'de, runtime image'da node + production `node_modules` (44 MB) + uygulama dosyaları var.
+
+
 Referans commit'ler (bu rapordaki tüm `dosya:satır` referansları bunlara göre):
 
 | repo | commit | tarih |
@@ -239,11 +247,11 @@ Ek olarak elle doğrulandı: Caddy (v2.11.7, `go install` ile build edildi) arka
 
 | konu | durum |
 |---|---|
-| open redirect (`/link`) | KAPATILDI. 302 sadece gönderenin link-tracking metadata'sında o index için kayıtlı `url` ile `redirect` birebir aynıysa. Aksi halde escape edilmiş, `http/https` link'li düz HTML sayfası (otomatik yönlendirme yok, `Referrer-Policy: no-referrer`). Bedeli: metadata server'a ulaşmadan (gönderimden hemen sonraki saniyeler) tıklayan alıcı bir ara sayfa görür ve click sayılmaz |
+| open redirect (`/link`) | KISMEN. Bilinen mesaj: tıklama sayılır ve 302 her zaman gönderenin metadata'sında o index için kayıtlı URL'e gider, `redirect` parametresi yok sayılır. Bilinmeyen mesaj (metadata henüz server'a ulaşmamış ya da sahte headerMessageId): `redirect` parametresine düz 302, tıklama sayılmaz. Alıcı hiçbir durumda ara sayfa görmez (istenen davranış). Kalan risk: sahte headerMessageId ile bu domain üzerinden başka siteye yönlendiren link üretilebilir. `javascript:`, `data:`, `vbscript:`, `file:` hiç yönlendirilmez (404) |
 | SQL injection | tüm sorgular prepared statement; `?me[a]=1` gibi object parametreler artık binding'e ulaşmıyor (önce better-sqlite3 TypeError'ı) |
 | base64/JSON parse | try/catch + tip kontrolü; bozuk token -> 1x1 image, log warn |
 | prototype pollution | link index sadece `^\d+$` |
-| stored XSS | thread-sharing.ejs düzeltildi. `/page/` ve `/asset/` tasarım gereği kullanıcı HTML'i serve ediyor -> sadece `share.` host'unda, id host'unda 404 (Caddyfile) |
+| stored XSS | thread-sharing.ejs düzeltildi. Tek host kurulumunda `/thread/` ve `/page/` nginx'te kapalı: tarayıcı testinde (Playwright/Chromium) paylaşılan thread sayfasındaki bir script'in aynı host'taki `/onboarding`'i (içinde API token var) okuyabildiği görüldü. `/asset/` açık; oraya sadece login olmuş kullanıcının kendi yüklediği dosyalar (imza fotoğrafı) gidiyor |
 | login brute force | rate limit YOK. Caddy'de built-in rate limit yok (plugin gerekiyor, yeni dependency). Öneri: Caddy JSON access log + fail2ban, `/login` 401'leri |
 | tracking verisi | open/link endpoint'leri tasarım gereği auth'suz; headerMessageId bilen biri sayaç artırabilir (resmi server'da da aynı model, doğrulanmadı) |
 

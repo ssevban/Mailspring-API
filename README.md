@@ -27,71 +27,49 @@ This is a fork of [1RandomDev/mailspring-api](https://github.com/1RandomDev/mail
 - :heavy_check_mark: Thread sharing
 
 ## Install
-### Docker Compose + Caddy (HTTPS, recommended)
-This repo ships a `docker-compose.yml` and `deploy/Caddyfile` that run the API behind
-[Caddy](https://caddyserver.com) with automatic Let's Encrypt certificates on three
-subdomains of one domain:
+### Docker image + host nginx (recommended)
+One host (e.g. `link.api.example.com`) serves everything: identity/metadata sync for the
+client and sync engine, and the public open/link tracking URLs. Thread sharing and shared
+activity pages (`/thread/`, `/page/`) are disabled in `deploy/nginx.conf`.
 
-| host | serves | who calls it |
-|---|---|---|
-| `id.<DOMAIN>` | `/api/*`, `/metadata/*`, `/deltas/*`, `/login`, `/onboarding`, `/dashboard` | the client (`rootURLForServer('identity')`) and the sync engine (`IDENTITY_SERVER`) |
-| `link.<DOMAIN>` | `/o/*`, `/open/*`, `/link/*` only | anyone who opens/clicks a tracked mail (public) |
-| `share.<DOMAIN>` | `/thread/*`, `/page/*`, `/asset/*`, `/signature-assets/*` only | anyone with a share link (public) |
-
-Shared pages and assets are user-supplied HTML/files, so they are only served on
-`share.`; the `id.` host returns 404 for them and for the tracking paths. The API
-container is not published on a host port.
-
-1. DNS: point `id.<DOMAIN>`, `link.<DOMAIN>` and `share.<DOMAIN>` (A/AAAA) at the server.
-   Ports 80 and 443 must be reachable for certificate issuance.
-2. Configure and start:
-   ```bash
-   git clone <this repo> mailspring-api && cd mailspring-api
-   cp .env.example .env    # set DOMAIN=<DOMAIN>
-   mkdir -p data && sudo chown 1000:1000 data   # the container runs as uid 1000
-   docker compose --profile caddy up -d --build
-   ```
-3. Create a user (there is no sign-up page):
-   ```bash
-   docker compose exec api ./manage.js user add --fullName "First Last" --email "you@example.com" --password "..."
-   ```
-4. Point the client at it: see [docs/client-changes.md](docs/client-changes.md).
-
-#### Host already runs nginx (instead of Caddy)
-`docker compose up -d --build` (without `--profile caddy`) starts only the API, published on
-`127.0.0.1:5101`. Then, with DOMAIN=`api.example.com` as an example:
+Build on your own machine, copy the image to the server:
 
 ```bash
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/mailspring-api
-sudo sed -i 's/api\.example\.com/<DOMAIN>/g' /etc/nginx/sites-available/mailspring-api
-# get the certificate first (one cert, three names), nginx must already answer on :80 for them
-sudo certbot certonly --webroot -w /var/www/html -d id.<DOMAIN> -d link.<DOMAIN> -d share.<DOMAIN>
-sudo ln -s /etc/nginx/sites-available/mailspring-api /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+# on your machine (use the server's arch: `uname -m` x86_64 -> linux/amd64, aarch64 -> linux/arm64)
+docker build --platform linux/amd64 -t mailspring-api:1 .
+docker save mailspring-api:1 | gzip > mailspring-api-1.tar.gz
+scp mailspring-api-1.tar.gz user@server:/tmp/
 ```
 
-certbot's renewal timer keeps the certificate fresh; add
-`--deploy-hook "systemctl reload nginx"` to the certonly command so nginx picks it up.
+On the server (nginx already installed, DNS A record of the host points at it):
 
-Resources: the API process uses roughly 90 MB RSS idle (measured), SQLite needs no
-separate service; a 1 GB / 2 vCPU VPS is enough. `npm install` inside `docker build`
-may compile `better-sqlite3` if no prebuilt binary matches; add swap if the build gets
-OOM-killed on a 1 GB host.
+```bash
+gunzip -c /tmp/mailspring-api-1.tar.gz | docker load
+sudo mkdir -p /opt/mailspring-api/data && sudo chown 1000:1000 /opt/mailspring-api/data
+docker run -d --name mailspring-api --restart unless-stopped \
+    -p 127.0.0.1:5101:5101 \
+    -v /opt/mailspring-api/data:/data \
+    -e SHARE_URL=https://link.api.example.com \
+    mailspring-api:1
+docker exec -it mailspring-api ./manage.js user add --fullName "First Last" --email "you@example.com" --password "..."
 
-Data lives in `./data` (SQLite, WAL mode). Back up the whole directory while the
-container is stopped, or use `sqlite3 data/mailspring-api.db ".backup backup.db"`.
+# nginx site (copy deploy/nginx.conf to the server first)
+sudo cp nginx.conf /etc/nginx/sites-available/mailspring-api
+sudo sed -i 's/link\.api\.example\.com/<your host>/' /etc/nginx/sites-available/mailspring-api
+sudo ln -s /etc/nginx/sites-available/mailspring-api /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d <your host>     # adds HTTPS + redirect to that server block
+```
 
-Exposure:
-- Tracking (`link.`) and share (`share.`) endpoints are intentionally public.
-- There is no admin web UI; user management is only `manage.js` via `docker compose exec`.
-- `/login`, `/onboarding` and `/dashboard` must stay reachable for the client's sign-in
-  webview. They have no rate limiting: put fail2ban (or similar) on Caddy's JSON access
-  log for `POST /login` responses with status 401 if the server is exposed to the internet.
-- Grammar check sends composer text to `LANGUAGETOOL_URL` (public LanguageTool by
-  default) and translation sends message text to Google Translate.
+Check: `curl -sI https://<your host>/o/AAAA.png` -> 200 `image/png`, `curl -s -o /dev/null -w '%{http_code}' https://<your host>/api/me` -> 401.
 
-Compatibility notes, test coverage and the list of endpoints the current client uses:
-[docs/compat.md](docs/compat.md). Run the tests with `npm test`.
+Notes:
+- The container runs as uid 1000, so the data dir must be owned by 1000.
+- Data is one SQLite file in `/opt/mailspring-api/data` (WAL mode); back up the directory while the container is stopped.
+- The API process uses about 90 MB RSS (measured); fine on a 1 GB / 2 vCPU VPS.
+- `/login`, `/onboarding` and `/dashboard` must stay reachable for the client's sign-in webview. They have no rate limiting; use fail2ban on nginx's access log for `POST /login` 401s if needed.
+- `docker-compose.yml` is an optional equivalent of the `docker run` above (`PUBLIC_URL` in `.env`).
+- Compatibility notes and tests: [docs/compat.md](docs/compat.md), `npm test`. Client changes: [docs/client-changes.md](docs/client-changes.md).
 
 ### Using Docker Compose
 docker-compose.yml
