@@ -137,12 +137,9 @@ function decodePathSegment(segment) {
         return null;
     }
 }
-function escapeHtml(str) {
-    return str.replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
-}
-function isHttpUrl(str) {
+function isRedirectableUrl(str) {
     try {
-        return ['http:', 'https:'].includes(new URL(str).protocol);
+        return !['javascript:', 'data:', 'vbscript:', 'file:'].includes(new URL(str).protocol);
     } catch(err) {
         return false;
     }
@@ -220,10 +217,11 @@ app.get(/\/link\/.+\/.+/, (req, res) => {
     const redirectUrl = typeof req.query.redirect === 'string' ? req.query.redirect : null;
     const recipient = typeof req.query.recipient === 'string' ? Buffer.from(req.query.recipient, 'base64').toString() : '';
 
-    // Only redirect straight to a URL the sender's client stored in the link-tracking
-    // metadata for this message/link, so /link/ can't be used as an open redirect.
+    // For a known message, redirect to the URL the sender's client stored for this link
+    // index (not the redirect param), so known messages can't be used as an open redirect
+    // and a mangled redirect param (mail gateways re-encoding URLs) still lands right.
     let trackedUrl = null;
-    if(messageId !== null && /^\d+$/.test(linkId) && redirectUrl) {
+    if(messageId !== null && /^\d+$/.test(linkId)) {
         db.transaction(() => {
             let stmt = db.prepare('SELECT * FROM objects WHERE object = \'metadata\' AND plugin_id = \'link-tracking\' AND json_extract(value, \'$.uid\') = ?;');
             let object = stmt.get(messageId);
@@ -232,7 +230,7 @@ app.get(/\/link\/.+\/.+/, (req, res) => {
             object.v++;
             object.value = JSON.parse(object.value);
             const link = Array.isArray(object.value.links) ? object.value.links[Number(linkId)] : null;
-            if(!link || link.url !== redirectUrl || !Array.isArray(link.click_data)) return;
+            if(!link || typeof link.url !== 'string' || !Array.isArray(link.click_data)) return;
 
             link.click_count++;
             link.click_data.push({
@@ -248,14 +246,13 @@ app.get(/\/link\/.+\/.+/, (req, res) => {
         })();
     }
 
-    if(trackedUrl && isHttpUrl(trackedUrl)) {
+    if(trackedUrl && isRedirectableUrl(trackedUrl)) {
         res.redirect(trackedUrl);
-    } else if(redirectUrl && isHttpUrl(redirectUrl)) {
-        // Unknown message (e.g. metadata not synced yet) or a redirect param that doesn't
-        // match what was sent: let the user see where the link goes instead of bouncing them.
-        const href = escapeHtml(redirectUrl);
-        res.setHeader('Referrer-Policy', 'no-referrer');
-        res.type('html').send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex, nofollow"><title>Redirect</title></head><body><p>This link leads to:</p><p><a href="${href}" rel="noopener noreferrer">${href}</a></p></body></html>`);
+    } else if(redirectUrl && isRedirectableUrl(redirectUrl)) {
+        // Unknown message: the sent message's metadata may not have reached the server yet
+        // (it's posted after the sent copy syncs). Recipients must never notice tracking,
+        // so redirect anyway; the click isn't counted.
+        res.redirect(redirectUrl);
     } else {
         res.status(404).end("Expired or broken link.");
     }

@@ -235,27 +235,29 @@ test('link tracking: redirect + click_count, recipient is standard base64 + URI 
     }
 });
 
-test('link tracking: no open redirect', async () => {
+test('link tracking: recipient only ever gets a redirect, never to a foreign URL for known messages', async () => {
     const hmid = 'LINK-2222@getmailspring.com';
-    const before = (await metadataFor('MSG2', 'link-tracking')).v;
+    const stored = 'https://example.com/path?a=1&b=two#frag';
+    const before = (await metadataFor('MSG2', 'link-tracking')).value.links[0].click_count;
 
-    // redirect param that doesn't match the URL stored for that link
-    const evil = await fetch(`${BASE}/link/${hmid}/0?redirect=${encodeURIComponent('https://evil.example/')}`, {redirect: 'manual'});
-    assert.notEqual(evil.status, 302);
-    assert.equal(evil.headers.get('location'), null);
-    const html = await evil.text();
-    assert.ok(!html.includes('<script'));
+    // known message: always the URL stored for that index, whatever the redirect param says
+    for(const redirect of ['https://evil.example/', 'https://example.com/path?a=1 b=two', null]) {
+        const q = redirect === null ? '' : `?redirect=${encodeURIComponent(redirect)}`;
+        const resp = await fetch(`${BASE}/link/${hmid}/0${q}`, {redirect: 'manual'});
+        assert.equal(resp.status, 302, String(redirect));
+        assert.equal(resp.headers.get('location'), stored);
+    }
+    assert.equal((await metadataFor('MSG2', 'link-tracking')).value.links[0].click_count, before + 3);
 
-    // unknown message: not a redirect either
-    const unknown = await fetch(`${BASE}/link/nope@x/0?redirect=${encodeURIComponent('https://evil.example/')}`, {redirect: 'manual'});
-    assert.notEqual(unknown.status, 302);
+    // unknown message (metadata not synced yet): plain redirect to the param, nothing recorded
+    const unknown = await fetch(`${BASE}/link/nope@x/0?redirect=${encodeURIComponent('https://example.org/x')}`, {redirect: 'manual'});
+    assert.equal(unknown.status, 302);
+    assert.equal(unknown.headers.get('location'), 'https://example.org/x');
 
-    // dangerous scheme is never linked or redirected to
+    // dangerous scheme is never redirected to
     const js = await fetch(`${BASE}/link/nope@x/0?redirect=${encodeURIComponent('javascript:alert(1)')}`, {redirect: 'manual'});
-    assert.notEqual(js.status, 302);
-    assert.ok(!(await js.text()).includes('javascript:'));
-
-    assert.equal((await metadataFor('MSG2', 'link-tracking')).v, before);
+    assert.equal(js.status, 404);
+    assert.equal(js.headers.get('location'), null);
 });
 
 test('malformed tracking input: image returned, no crash, no DB write', async () => {
