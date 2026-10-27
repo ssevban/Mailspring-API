@@ -51,7 +51,7 @@ docker run -d --name mailspring-api --restart unless-stopped \
     -v /opt/mailspring-api/data:/data \
     -e SHARE_URL=https://link.api.example.com \
     mailspring-api:1
-docker exec -it mailspring-api ./manage.js user add --fullName "First Last" --email "you@example.com" --password "..."
+docker exec -it mailspring-api node manage.js user add --fullName "First Last" --email "you@example.com" --password "..."
 
 # nginx site (copy deploy/nginx.conf to the server first)
 sudo cp nginx.conf /etc/nginx/sites-available/mailspring-api

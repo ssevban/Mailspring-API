@@ -1,0 +1,4 @@
+# Linux container runs these: keep LF even on Windows checkouts (core.autocrlf).
+* text=auto eol=lf
+*.gif binary
+*.png binary
