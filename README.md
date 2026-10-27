@@ -74,6 +74,32 @@ Notes:
 - `docker-compose.yml` is an optional equivalent of the `docker run` above (`PUBLIC_URL` in `.env`).
 - Compatibility notes and tests: [docs/compat.md](docs/compat.md), `npm test`. Client changes: [docs/client-changes.md](docs/client-changes.md).
 
+### Prebuilt image from GHCR (GitHub Actions)
+`.github/workflows/docker-build.yml` builds the image on every push to `master` (tag
+`latest` and `sha-<commit>`) and on `v*.*.*` tags, and pushes it to
+`ghcr.io/ssevban/mailspring-api`. The server then only pulls, no build there.
+
+One-time: on a fork, enable workflows under the repository's Actions tab. After the first
+build, either make the package public (GitHub > Packages > mailspring-api > Package
+settings > Change visibility) or `docker login ghcr.io` on the server with a token that
+has `read:packages`.
+
+Deploy / update on the server:
+
+```bash
+docker pull ghcr.io/ssevban/mailspring-api:latest
+docker rm -f mailspring-api
+docker run -d --name mailspring-api --restart unless-stopped \
+    -p 127.0.0.1:5101:5101 \
+    -v /opt/mailspring-api/data:/data \
+    -e SHARE_URL=https://link.api.example.com \
+    ghcr.io/ssevban/mailspring-api:latest
+docker image prune -f
+```
+
+The data directory survives the container being replaced. To roll back, run a previous
+`sha-<commit>` tag instead of `latest`.
+
 ### Install on the host
 ```bash
 git clone https://github.com/ssevban/Mailspring-API.git && cd Mailspring-API
