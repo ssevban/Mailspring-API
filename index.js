@@ -129,7 +129,30 @@ app.get(/\/signature-assets\/[a-z0-9_-]+\.(gif|png)$/i, (req, res) => {
         if(err) res.status(404).end();
     });
 });
+// Path segments arrive percent-encoded (req.path isn't decoded); returns null if malformed.
+function decodePathSegment(segment) {
+    try {
+        return decodeURIComponent(segment);
+    } catch(err) {
+        return null;
+    }
+}
+function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
+}
+function isHttpUrl(str) {
+    try {
+        return ['http:', 'https:'].includes(new URL(str).protocol);
+    } catch(err) {
+        return false;
+    }
+}
+
+// Tracking URLs are public, so everything below treats messageId/accountId/recipient as untrusted.
 function recordOpenTrackingHit(messageId, accountId, recipient) {
+    if(typeof messageId !== 'string' || typeof accountId !== 'string') return;
+    if(typeof recipient !== 'string') recipient = '';
+
     db.transaction(() => {
         let stmt = db.prepare('SELECT * FROM objects WHERE object = \'metadata\' AND plugin_id = \'open-tracking\' AND aid = ? AND json_extract(value, \'$.uid\') = ?;');
         let object = stmt.get(accountId, messageId);
@@ -137,6 +160,7 @@ function recordOpenTrackingHit(messageId, accountId, recipient) {
         if(object) {
             object.v++;
             object.value = JSON.parse(object.value);
+            if(!Array.isArray(object.value.open_data)) return;
             object.value.open_count++;
             object.value.open_data.push({
                 timestamp: Date.now()/1000,
@@ -156,11 +180,15 @@ function recordOpenTrackingHit(messageId, accountId, recipient) {
 app.get(/\/open\/.+/, (req, res) => {
     res.sendFile(path.resolve('./static/blank.gif'));
 
-    const messageId = req.path.match(/\/open\/(.+)/)[1];
+    const messageId = decodePathSegment(req.path.match(/\/open\/(.+)/)[1]);
     const accountId = req.query.me;
-    const recipient = req.query.recipient ? Buffer.from(req.query.recipient, 'base64').toString() : '';
+    const recipient = typeof req.query.recipient === 'string' ? Buffer.from(req.query.recipient, 'base64').toString() : '';
 
-    recordOpenTrackingHit(messageId, accountId, recipient);
+    try {
+        recordOpenTrackingHit(messageId, accountId, recipient);
+    } catch(err) {
+        logger.warn(`Failed to record legacy open-tracking hit: ${err.message}`);
+    }
 });
 // Current pixel format (client commit f20e1284e, "read receipt tracking pixel
 // best practices"): a single opaque base64url token instead of query-string
@@ -173,48 +201,64 @@ app.get(/\/o\/([A-Za-z0-9_-]+)\.png$/, (req, res) => {
     try {
         const token = req.params[0].replace(/-/g, '+').replace(/_/g, '/');
         const padded = token + '='.repeat((4 - (token.length % 4)) % 4);
-        const { messageId, accountId, recipient } = JSON.parse(Buffer.from(padded, 'base64').toString());
+        const decoded = JSON.parse(Buffer.from(padded, 'base64').toString());
+        if(!decoded || typeof decoded !== 'object') throw new Error('token is not an object');
+        const { messageId, accountId, recipient } = decoded;
 
-        recordOpenTrackingHit(messageId, accountId, recipient || '');
+        recordOpenTrackingHit(messageId, accountId, recipient);
     } catch(err) {
         logger.warn(`Failed to decode open-tracking token: ${err.message}`);
     }
 });
+// Link format from the client's link-tracking-composer-extension.ts:
+// /link/<headerMessageId>/<index>?redirect=<encodeURIComponent(url)>[&recipient=<encodeURIComponent(btoa(email))>]
+// recipient is omitted for shared_body sends (Microsoft Graph accounts).
 app.get(/\/link\/.+\/.+/, (req, res) => {
-    const redirectUrl = req.query.redirect;
-    if(!redirectUrl) {
-        res.status(404).end("Expired or broken link.");
-        return;
-    }
-    res.redirect(redirectUrl);
-
     const pathValues = req.path.match(/\/link\/(.+)\/(.+)/);
-    const messageId = pathValues[1];
+    const messageId = decodePathSegment(pathValues[1]);
     const linkId = pathValues[2];
-    const recipient = Buffer.from(req.query.recipient, 'base64').toString();
+    const redirectUrl = typeof req.query.redirect === 'string' ? req.query.redirect : null;
+    const recipient = typeof req.query.recipient === 'string' ? Buffer.from(req.query.recipient, 'base64').toString() : '';
 
-    db.transaction(() => {
-        let stmt = db.prepare('SELECT * FROM objects WHERE object = \'metadata\' AND plugin_id = \'link-tracking\' AND json_extract(value, \'$.uid\') = ?;');
-        let object = stmt.get(messageId);
+    // Only redirect straight to a URL the sender's client stored in the link-tracking
+    // metadata for this message/link, so /link/ can't be used as an open redirect.
+    let trackedUrl = null;
+    if(messageId !== null && /^\d+$/.test(linkId) && redirectUrl) {
+        db.transaction(() => {
+            let stmt = db.prepare('SELECT * FROM objects WHERE object = \'metadata\' AND plugin_id = \'link-tracking\' AND json_extract(value, \'$.uid\') = ?;');
+            let object = stmt.get(messageId);
+            if(!object) return;
 
-        if(object) {
             object.v++;
             object.value = JSON.parse(object.value);
-            const link = object.value.links[linkId];
-            if(link) {
-                link.click_count++;
-                link.click_data.push({
-                    timestamp: Date.now()/1000,
-                    recipient: recipient
-                });
+            const link = Array.isArray(object.value.links) ? object.value.links[Number(linkId)] : null;
+            if(!link || link.url !== redirectUrl || !Array.isArray(link.click_data)) return;
 
-                stmt = db.prepare('UPDATE objects SET v = ?, value = ? WHERE id = ?;');
-                stmt.run(object.v, JSON.stringify(object.value), object.id);
-        
-                emitEvent('modify', object);
-            }
-        }
-    })();
+            link.click_count++;
+            link.click_data.push({
+                timestamp: Date.now()/1000,
+                recipient: recipient
+            });
+
+            stmt = db.prepare('UPDATE objects SET v = ?, value = ? WHERE id = ?;');
+            stmt.run(object.v, JSON.stringify(object.value), object.id);
+
+            emitEvent('modify', object);
+            trackedUrl = link.url;
+        })();
+    }
+
+    if(trackedUrl && isHttpUrl(trackedUrl)) {
+        res.redirect(trackedUrl);
+    } else if(redirectUrl && isHttpUrl(redirectUrl)) {
+        // Unknown message (e.g. metadata not synced yet) or a redirect param that doesn't
+        // match what was sent: let the user see where the link goes instead of bouncing them.
+        const href = escapeHtml(redirectUrl);
+        res.setHeader('Referrer-Policy', 'no-referrer');
+        res.type('html').send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex, nofollow"><title>Redirect</title></head><body><p>This link leads to:</p><p><a href="${href}" rel="noopener noreferrer">${href}</a></p></body></html>`);
+    } else {
+        res.status(404).end("Expired or broken link.");
+    }
 });
 app.get(/\/page\/.+/, (req, res) => {
     const key = req.path.match(/\/page\/(.+)/)[1];
