@@ -1,4 +1,4 @@
-# Self-hosted deploy: mailspring-api behind Caddy (automatic HTTPS).
+# Self-hosted deploy: mailspring-api behind Caddy (automatic HTTPS) or a host nginx.
 # Needs DOMAIN in .env (see .env.example) and DNS A/AAAA records for
 # id.$DOMAIN, link.$DOMAIN and share.$DOMAIN pointing at this host.
 services:
@@ -11,12 +11,14 @@ services:
       - TZ=${TZ:-UTC}
       - SHARE_URL=https://share.${DOMAIN:?set DOMAIN in .env}
       - LANGUAGETOOL_URL=${LANGUAGETOOL_URL:-https://api.languagetool.org}
-    # not published on the host: only reachable through Caddy
-    expose:
-      - "5101"
+    # loopback only: reachable from Caddy (same network) or a host nginx (deploy/nginx.conf)
+    ports:
+      - "127.0.0.1:5101:5101"
 
+  # only with `docker compose --profile caddy up -d`; skip it if the host already runs nginx
   caddy:
     image: caddy:2.11
+    profiles: ["caddy"]
     restart: unless-stopped
     depends_on:
       - api

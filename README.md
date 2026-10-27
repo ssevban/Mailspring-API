@@ -49,13 +49,34 @@ container is not published on a host port.
    git clone <this repo> mailspring-api && cd mailspring-api
    cp .env.example .env    # set DOMAIN=<DOMAIN>
    mkdir -p data && sudo chown 1000:1000 data   # the container runs as uid 1000
-   docker compose up -d --build
+   docker compose --profile caddy up -d --build
    ```
 3. Create a user (there is no sign-up page):
    ```bash
    docker compose exec api ./manage.js user add --fullName "First Last" --email "you@example.com" --password "..."
    ```
 4. Point the client at it: see [docs/client-changes.md](docs/client-changes.md).
+
+#### Host already runs nginx (instead of Caddy)
+`docker compose up -d --build` (without `--profile caddy`) starts only the API, published on
+`127.0.0.1:5101`. Then, with DOMAIN=`api.example.com` as an example:
+
+```bash
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/mailspring-api
+sudo sed -i 's/api\.example\.com/<DOMAIN>/g' /etc/nginx/sites-available/mailspring-api
+# get the certificate first (one cert, three names), nginx must already answer on :80 for them
+sudo certbot certonly --webroot -w /var/www/html -d id.<DOMAIN> -d link.<DOMAIN> -d share.<DOMAIN>
+sudo ln -s /etc/nginx/sites-available/mailspring-api /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+certbot's renewal timer keeps the certificate fresh; add
+`--deploy-hook "systemctl reload nginx"` to the certonly command so nginx picks it up.
+
+Resources: the API process uses roughly 90 MB RSS idle (measured), SQLite needs no
+separate service; a 1 GB / 2 vCPU VPS is enough. `npm install` inside `docker build`
+may compile `better-sqlite3` if no prebuilt binary matches; add swap if the build gets
+OOM-killed on a 1 GB host.
 
 Data lives in `./data` (SQLite, WAL mode). Back up the whole directory while the
 container is stopped, or use `sqlite3 data/mailspring-api.db ".backup backup.db"`.

@@ -249,7 +249,7 @@ Ek olarak elle doğrulandı: Caddy (v2.11.7, `go install` ile build edildi) arka
 
 ## 7. Açık konular
 
-- `static/thread-sharing.ejs` CSS/JS'i `https://shared.getmailspring.com/static/thread-sharing/build/...` adresinden yüklüyor (1RandomDev'den beri). Paylaşılan thread sayfası Foundry376'nın CDN'ine bağlı ve o script share origin'inde çalışıyor. Bu sandbox'tan host'a erişilemedi, dosyaların hâlâ yayında olup olmadığı DOĞRULANMADI. Çözüm bundle'ı repo'ya vendor'lamak, ama kaynağı bu repoda yok.
+- `static/thread-sharing.ejs` CSS/JS'i `https://shared.getmailspring.com/static/thread-sharing/build/...` adresinden yüklüyor (1RandomDev'den beri). Paylaşılan thread sayfası Foundry376'nın CDN'ine bağlı ve o script share origin'inde çalışıyor. 2026-10-27'de iki dosya da 200 dönüyor (curl ile kontrol edildi), yani şu an çalışıyor ama Foundry376 kaldırırsa paylaşılan thread sayfası boş açılır. Çözüm bundle'ı repo'ya vendor'lamak, ama kaynağı bu repoda yok.
 - `/api/views/*` (AI authoring + View sharing) implement edilmedi.
 - metadata update yolu (`UPDATE` + `emitEvent`) transaction dışında; tek process'te sorun değil, değiştirmedim.
 - `/link` lookup'ı `aid` ile scope'lanmıyor (headerMessageId unique varsayımı, upstream'den beri).

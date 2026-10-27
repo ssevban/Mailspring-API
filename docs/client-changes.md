@@ -12,7 +12,7 @@ link.<DOMAIN>   /o/ /open/ /link/                                    (open/link 
 share.<DOMAIN>  /thread/ /page/ /asset/ /signature-assets/           (backend SHARE_URL)
 ```
 
-`<DOMAIN>` = senin domain'in. Aşağıdaki diff'lerde `example.com` yerine onu yaz.
+`<DOMAIN>` = `example.com` (yani `id.example.com`, `link.example.com`, `share.example.com`). Aşağıdaki diff'lerde `example.com` yerine `example.com` yaz.
 
 ## 1. Zorunlu (backend'e bağlı)
 
@@ -146,9 +146,22 @@ npm run build
 
 Windows installer (`app/build/create-signed-windows-installer.js`) `WINDOWS_SIGNTOOL_PATH` yoksa `process.exit(1)` yapıyor (satır 99-101), yani Squirrel installer imza sertifikası olmadan üretilmiyor. İmzasız kullanım için `app\dist\mailspring-win32-x64\` klasörünü olduğu gibi kullan. Squirrel ile kurulmamış bir klasörde Windows auto-update'in ne yaptığını test etmedim; 1.5'i yine de uygula.
 
+macOS (kendi Mac'inde):
+
+```bash
+xcode-select --install
+git clone https://github.com/ssevban/Mailspring && cd Mailspring
+# 1.1 - 1.6 değişikliklerini uygula
+npm ci
+npm run build
+# çıktı: app/dist/Mailspring.app ve app/dist/Mailspring.zip
+```
+
+`SIGN_BUILD` ve `APPLE_ID` env'leri yoksa imzalama ve notarization atlanıyor (`app/build/build.js:356, 392`). Kendi Mac'inde build edip açtığın app'te quarantine attribute olmaz, çalışır. Başka bir Mac'e zip olarak taşırsan Gatekeeper engeller: `xattr -dr com.apple.quarantine /Applications/Mailspring.app`. macOS'ta auto-update Squirrel.Mac ile ve imzalı build istiyor; 1.5'i yine uygula. Bu adımları çalıştırmadım.
+
 `--skip-installers` sadece paketlenmiş klasörü üretir (her iki platform).
 
-Bu build adımlarını bu session'da çalıştırmadım. Platform tercihin (Windows/Linux) prompt'ta doldurulmamıştı, ikisini de yazdım.
+Hedef: Windows ve macOS. Linux adımları referans için duruyor. Build adımlarının hiçbirini bu session'da çalıştırmadım.
 
 ## 4. Doğrulama (build sonrası)
 
