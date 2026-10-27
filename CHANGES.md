@@ -1,6 +1,9 @@
-# Fork Changes
+# Changes in irfanMiral/Mailspring-API
 
-This file tracks what this fork changes relative to
+Kept from [irfanMiral/Mailspring-API](https://github.com/irfanMiral/Mailspring-API), which this
+repository forks. Changes made after that fork are listed in [docs/compat.md](docs/compat.md).
+
+This file tracks what irfanMiral's fork changes relative to
 [1RandomDev/mailspring-api](https://github.com/1RandomDev/mailspring-api),
 which had been unmaintained since 2023.
 

@@ -2,11 +2,14 @@
 
 Free reimplementation of the Mailspring Sync backend (and other required APIs). This project provides an alternative sync server that can be self-hosted for the [Mailspring Email Client](https://getmailspring.com/).
 
-**🔴IMPORTANT🔴** This project only works with a Mailspring client build that allows configuring a custom API server — the official client hardcodes `getmailspring.com`. [irfanMiral/Mailspring](https://github.com/irfanMiral/Mailspring) (or [1RandomDev/Mailspring](https://github.com/1RandomDev/Mailspring), which it's based on) both support this.
+**IMPORTANT:** the official Mailspring client hardcodes `getmailspring.com`. This server needs a client build pointed at it; see [docs/client-changes.md](docs/client-changes.md) for the minimum changes.
 
-## About this fork
+## Origin
 
-This is a fork of [1RandomDev/mailspring-api](https://github.com/1RandomDev/mailspring-api), which had been unmaintained since 2023 while the Mailspring client kept shipping new features. This fork exists to keep the backend working against a current client, fix bugs found along the way, and add support for features the original project's client version predates. See [CHANGES.md](CHANGES.md) for what's changed.
+This repository is maintained by [ssevban](https://github.com/ssevban). It is a fork of [irfanMiral/Mailspring-API](https://github.com/irfanMiral/Mailspring-API), which itself is a fork of the original [1RandomDev/mailspring-api](https://github.com/1RandomDev/mailspring-api). Licensed under GPL-3.0 like both upstreams.
+
+- Changes made in irfanMiral's fork: [CHANGES.md](CHANGES.md)
+- Changes made in this fork (client compatibility fixes, tracking hardening, single-host nginx deploy): [docs/compat.md](docs/compat.md)
 
 ## Supported Features
 - :heavy_check_mark: Metadata Sync
@@ -19,12 +22,12 @@ This is a fork of [1RandomDev/mailspring-api](https://github.com/1RandomDev/mail
 - :heavy_check_mark: Mail Templates
 - :heavy_check_mark: Grammar check (proxies to a [LanguageTool](https://languagetool.org/)-compatible server)
 - :heavy_check_mark: CalDAV/CardDAV host discovery (for the client's own calendar/contacts sync, which talks to your mail provider directly)
-- :heavy_check_mark: Account dashboard (`/dashboard`) - change password, view/revoke active sessions
+- :heavy_check_mark: Account dashboard (`/dashboard`) - change password, view/revoke active sessions (blocked in `deploy/nginx.conf`, the client doesn't need it)
 - :x: Rich contact profile
 - :x: Company overviews
-- :heavy_check_mark: Mailbox insights (+ sharing)
+- :heavy_check_mark: Mailbox insights (sharing them is blocked in `deploy/nginx.conf`)
 - :heavy_check_mark: Translation (using Google Translate)
-- :heavy_check_mark: Thread sharing
+- :x: Thread sharing (blocked in `deploy/nginx.conf`: shared pages would run third-party HTML on the API's origin)
 
 ## Install
 ### Docker image + host nginx (recommended)
@@ -67,46 +70,16 @@ Notes:
 - The container runs as uid 1000, so the data dir must be owned by 1000.
 - Data is one SQLite file in `/opt/mailspring-api/data` (WAL mode); back up the directory while the container is stopped.
 - The API process uses about 90 MB RSS (measured); fine on a 1 GB / 2 vCPU VPS.
-- `/login`, `/onboarding` and `/dashboard` must stay reachable for the client's sign-in webview. They have no rate limiting; use fail2ban on nginx's access log for `POST /login` 401s if needed.
+- `/onboarding` and `/login` must stay reachable for the client's sign-in webview. nginx limits `POST /login` to 5 requests/minute per IP; `/` and `/dashboard` return 404.
 - `docker-compose.yml` is an optional equivalent of the `docker run` above (`PUBLIC_URL` in `.env`).
 - Compatibility notes and tests: [docs/compat.md](docs/compat.md), `npm test`. Client changes: [docs/client-changes.md](docs/client-changes.md).
 
-### Using Docker Compose
-docker-compose.yml
-```yaml
-version: "3.4"
-
-services:
-  mailspring-api:
-    container_name: mailspring-api
-    image: ghcr.io/irfanmiral/mailspring-api:latest
-    network_mode: bridge
-    ports:
-      - 5101:5101/tcp
-    volumes:
-      - ./data:/data
-    environment:
-      - TZ=<timezone>
-      - SHARE_URL=https://<my_public_domain>
-    restart: unless-stopped
-```
-### Using Docker CLI
-```bash
-docker run -d --name=mailspring-api \
-    --network=bridge \
-    -p 5101:5101/tcp \
-    -v <data_directory>:/data \
-    -e TZ=<timezone> \
-    -e SHARE_URL=https://<my_public_domain> \
-    ghcr.io/irfanmiral/mailspring-api:latest
-```
-
 ### Install on the host
 ```bash
-git clone https://github.com/irfanMiral/Mailspring-API.git && cd Mailspring-API
+git clone https://github.com/ssevban/Mailspring-API.git && cd Mailspring-API
 npm install
 
-./manage.js user add --fullName "..." --email "..." --password "..."
+node manage.js user add --fullName "..." --email "..." --password "..."
 npm start
 ```
 
@@ -114,18 +87,18 @@ npm start
 | Variable | Description | Default |
 |----------|-------------|---------|
 | LOG_LEVEL | Set custom log level. [Available log levels](https://github.com/winstonjs/winston#logging-levels). | `info` |
-| SHARE_URL | External url for shared resources. (Should be on a different domain for securrity purposes.) | `http://localhost:5101` |
+| SHARE_URL | Public URL of this server, used in links to uploaded assets (e.g. signature photos). | `http://localhost:5101` |
 | API_PORT | The port that is used for the webinterface and the API. | 5101 |
 | LANGUAGETOOL_URL | Base URL of a [LanguageTool](https://languagetool.org/)-compatible grammar check server, used for the composer's grammar check feature. Defaults to the public LanguageTool API, which is rate-limited; point this at a self-hosted instance (e.g. the [erikvl87/languagetool](https://hub.docker.com/r/erikvl87/languagetool) Docker image) to avoid that. | `https://api.languagetool.org` |
 
 ## Create/Manage a user account
 You can create a new user account using the CLI tool.
 ```bash
-docker exec -it mailspring-api ./manage.js user add --fullName "..." --email "..." --password "..."
+docker exec -it mailspring-api node manage.js user add --fullName "..." --email "..." --password "..."
 ```
 For more info use
 ```bash
-$ docker exec -it mailspring-api ./manage.js user --help
+$ docker exec -it mailspring-api node manage.js user --help
 manage.js user <operation> [options]
 
 Magage user accounts.

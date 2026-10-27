@@ -7,7 +7,11 @@
     "start": "node index.js",
     "test": "node --test test/*.test.js"
   },
-  "author": "1RandomDev",
+  "author": "ssevban",
+  "contributors": [
+    "1RandomDev (original author, https://github.com/1RandomDev/mailspring-api)",
+    "irfanMiral (https://github.com/irfanMiral/Mailspring-API)"
+  ],
   "license": "GPL-3.0",
   "type": "module",
   "dependencies": {
@@ -24,5 +28,9 @@
     "readline-sync": "^1.4.10",
     "winston": "^3.8.2",
     "yargs": "^17.7.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ssevban/Mailspring-API.git"
   }
 }
