@@ -48,6 +48,7 @@ container is not published on a host port.
    ```bash
    git clone <this repo> mailspring-api && cd mailspring-api
    cp .env.example .env    # set DOMAIN=<DOMAIN>
+   mkdir -p data && sudo chown 1000:1000 data   # the container runs as uid 1000
    docker compose up -d --build
    ```
 3. Create a user (there is no sign-up page):
