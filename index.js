@@ -44,6 +44,8 @@ const logger = winston.createLogger({
 });
 const app = express();
 const upload = multer();
+// Behind a reverse proxy (Caddy) so req.secure reflects X-Forwarded-Proto.
+app.set('trust proxy', 'loopback, uniquelocal');
 
 if(!fs.existsSync('./data')) {
     fs.mkdirSync('./data');
@@ -373,7 +375,7 @@ app.post('/login', (req, res) => {
     if(identity.error) {
         res.status(identity.statusCode);
     } else {
-        res.cookie('session', identity.token);
+        res.cookie('session', identity.token, {httpOnly: true, sameSite: 'lax', secure: req.secure});
     }
     res.json(identity);
 });
