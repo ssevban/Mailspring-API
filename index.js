@@ -137,11 +137,16 @@ function decodePathSegment(segment) {
         return null;
     }
 }
-function isRedirectableUrl(str) {
+// The client tracks any href matching its urlRegex, including scheme-less ones like
+// "google.com", so those get http:// like a browser address bar would add.
+function toRedirectUrl(str) {
+    if(typeof str !== 'string' || str === '') return null;
+    if(str.startsWith('//')) str = 'http:' + str;
+    else if(!/^[a-z][a-z0-9+.-]*:/i.test(str)) str = 'http://' + str;
     try {
-        return !['javascript:', 'data:', 'vbscript:', 'file:'].includes(new URL(str).protocol);
+        return ['javascript:', 'data:', 'vbscript:', 'file:'].includes(new URL(str).protocol) ? null : str;
     } catch(err) {
-        return false;
+        return null;
     }
 }
 
@@ -246,13 +251,12 @@ app.get(/\/link\/.+\/.+/, (req, res) => {
         })();
     }
 
-    if(trackedUrl && isRedirectableUrl(trackedUrl)) {
-        res.redirect(trackedUrl);
-    } else if(redirectUrl && isRedirectableUrl(redirectUrl)) {
+    const target = toRedirectUrl(trackedUrl) || toRedirectUrl(redirectUrl);
+    if(target) {
         // Unknown message: the sent message's metadata may not have reached the server yet
         // (it's posted after the sent copy syncs). Recipients must never notice tracking,
-        // so redirect anyway; the click isn't counted.
-        res.redirect(redirectUrl);
+        // so redirect to the redirect param anyway; the click isn't counted.
+        res.redirect(target);
     } else {
         res.status(404).end("Expired or broken link.");
     }

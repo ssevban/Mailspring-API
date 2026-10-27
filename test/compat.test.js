@@ -254,6 +254,19 @@ test('link tracking: recipient only ever gets a redirect, never to a foreign URL
     assert.equal(unknown.status, 302);
     assert.equal(unknown.headers.get('location'), 'https://example.org/x');
 
+    // scheme-less hrefs ("google.com") pass the client's urlRegex and must still redirect
+    const bare = await postMetadata('MSG5', 'link-tracking', {
+        uid: 'BARE@x', links: [{url: 'google.com', click_count: 0, click_data: [], redirect_url: ''}]
+    });
+    assert.equal(bare.status, 200);
+    const known = await fetch(`${BASE}/link/BARE@x/0?redirect=google.com`, {redirect: 'manual'});
+    assert.equal(known.status, 302);
+    assert.equal(known.headers.get('location'), 'http://google.com');
+    assert.equal((await metadataFor('MSG5', 'link-tracking')).value.links[0].click_count, 1);
+    const bareUnknown = await fetch(`${BASE}/link/nope@x/0?redirect=google.com`, {redirect: 'manual'});
+    assert.equal(bareUnknown.status, 302);
+    assert.equal(bareUnknown.headers.get('location'), 'http://google.com');
+
     // dangerous scheme is never redirected to
     const js = await fetch(`${BASE}/link/nope@x/0?redirect=${encodeURIComponent('javascript:alert(1)')}`, {redirect: 'manual'});
     assert.equal(js.status, 404);
