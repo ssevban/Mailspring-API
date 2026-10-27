@@ -27,6 +27,50 @@ This is a fork of [1RandomDev/mailspring-api](https://github.com/1RandomDev/mail
 - :heavy_check_mark: Thread sharing
 
 ## Install
+### Docker Compose + Caddy (HTTPS, recommended)
+This repo ships a `docker-compose.yml` and `deploy/Caddyfile` that run the API behind
+[Caddy](https://caddyserver.com) with automatic Let's Encrypt certificates on three
+subdomains of one domain:
+
+| host | serves | who calls it |
+|---|---|---|
+| `id.<DOMAIN>` | `/api/*`, `/metadata/*`, `/deltas/*`, `/login`, `/onboarding`, `/dashboard` | the client (`rootURLForServer('identity')`) and the sync engine (`IDENTITY_SERVER`) |
+| `link.<DOMAIN>` | `/o/*`, `/open/*`, `/link/*` only | anyone who opens/clicks a tracked mail (public) |
+| `share.<DOMAIN>` | `/thread/*`, `/page/*`, `/asset/*`, `/signature-assets/*` only | anyone with a share link (public) |
+
+Shared pages and assets are user-supplied HTML/files, so they are only served on
+`share.`; the `id.` host returns 404 for them and for the tracking paths. The API
+container is not published on a host port.
+
+1. DNS: point `id.<DOMAIN>`, `link.<DOMAIN>` and `share.<DOMAIN>` (A/AAAA) at the server.
+   Ports 80 and 443 must be reachable for certificate issuance.
+2. Configure and start:
+   ```bash
+   git clone <this repo> mailspring-api && cd mailspring-api
+   cp .env.example .env    # set DOMAIN=<DOMAIN>
+   docker compose up -d --build
+   ```
+3. Create a user (there is no sign-up page):
+   ```bash
+   docker compose exec api ./manage.js user add --fullName "First Last" --email "you@example.com" --password "..."
+   ```
+4. Point the client at it: see [docs/client-changes.md](docs/client-changes.md).
+
+Data lives in `./data` (SQLite, WAL mode). Back up the whole directory while the
+container is stopped, or use `sqlite3 data/mailspring-api.db ".backup backup.db"`.
+
+Exposure:
+- Tracking (`link.`) and share (`share.`) endpoints are intentionally public.
+- There is no admin web UI; user management is only `manage.js` via `docker compose exec`.
+- `/login`, `/onboarding` and `/dashboard` must stay reachable for the client's sign-in
+  webview. They have no rate limiting: put fail2ban (or similar) on Caddy's JSON access
+  log for `POST /login` responses with status 401 if the server is exposed to the internet.
+- Grammar check sends composer text to `LANGUAGETOOL_URL` (public LanguageTool by
+  default) and translation sends message text to Google Translate.
+
+Compatibility notes, test coverage and the list of endpoints the current client uses:
+[docs/compat.md](docs/compat.md). Run the tests with `npm test`.
+
 ### Using Docker Compose
 docker-compose.yml
 ```yaml

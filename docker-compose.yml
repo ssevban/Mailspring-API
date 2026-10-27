@@ -1,0 +1,36 @@
+# Self-hosted deploy: mailspring-api behind Caddy (automatic HTTPS).
+# Needs DOMAIN in .env (see .env.example) and DNS A/AAAA records for
+# id.$DOMAIN, link.$DOMAIN and share.$DOMAIN pointing at this host.
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=${TZ:-UTC}
+      - SHARE_URL=https://share.${DOMAIN:?set DOMAIN in .env}
+      - LANGUAGETOOL_URL=${LANGUAGETOOL_URL:-https://api.languagetool.org}
+    # not published on the host: only reachable through Caddy
+    expose:
+      - "5101"
+
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
