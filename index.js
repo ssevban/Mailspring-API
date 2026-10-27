@@ -548,7 +548,7 @@ app.post(/\/metadata\/.+\/.+\/.+/, (req, res) => {
         res.status(400).json({statusCode: 400, error: 'Bad Request', message: 'Key "value" is required'});
         return;
     }
-    if(!req.body.version) {
+    if(!Number.isInteger(req.body.version) || req.body.version < 1) {
         res.status(400).json({statusCode: 400, error: 'Bad Request', message: 'Key "version" is required'});
         return;
     }
@@ -560,7 +560,9 @@ app.post(/\/metadata\/.+\/.+\/.+/, (req, res) => {
         // Update
         if(req.body.version >= object.v) {
             const previousValue = object.value;
-            object.v++;
+            // The sync engine ignores incoming metadata whose v is <= its local copy
+            // (MailModel::upsertMetadata), so never store a lower v than the client has.
+            object.v = Math.max(object.v + 1, req.body.version);
             object.value = req.body.value;
             const newValue = JSON.stringify(object.value);
 
@@ -578,7 +580,7 @@ app.post(/\/metadata\/.+\/.+\/.+/, (req, res) => {
         // Create
         db.transaction(() => {
             stmt = db.prepare('INSERT INTO objects(object_id, object, object_type, aid, identity_id, plugin_id, v, value, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);');
-            stmt.run(objectId, 'metadata', req.body.objectType, accountId, req.identity.id, pluginId, 1, JSON.stringify(req.body.value), Math.round(Date.now() / 1000));
+            stmt.run(objectId, 'metadata', req.body.objectType, accountId, req.identity.id, pluginId, req.body.version, JSON.stringify(req.body.value), Math.round(Date.now() / 1000));
             
             stmt = db.prepare('SELECT * FROM objects WHERE id = last_insert_rowid();');
             object = stmt.get();
