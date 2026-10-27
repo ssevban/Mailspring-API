@@ -11,7 +11,7 @@
     <noscript>You need to enable JavaScript to view this shared thread.</noscript>
     <div id="root"></div>
     <script>
-        window.data = <%- JSON.stringify(data) %>;
+        window.data = <%- JSON.stringify(data).replace(/</g, '\\u003c') %>;
     </script>
     <script src="https://shared.getmailspring.com/static/thread-sharing/build/static/js/main.cca374f6.js"></script>
   </body>
