@@ -132,8 +132,10 @@ function compareVersions(a, b) {
 }
 
 app.get('/update-check/:token/:platform/:arch/:version', (req, res) => {
-    const { token, platform, arch, version } = req.params;
-    if(!/^[A-Za-z0-9_-]{32,128}$/.test(token) || !/^[a-z0-9]+$/.test(platform) || !/^[a-z0-9]+$/.test(arch) || !/^\d+(\.\d+)*$/.test(version)) {
+    const { token, platform, arch } = req.params;
+    // The client sends "<package version>-<commit hash>" (app/src/browser/main.js).
+    const version = req.params.version.match(/^(\d+(?:\.\d+)*)(?:-[0-9a-f]+)?$/)?.[1];
+    if(!/^[A-Za-z0-9_-]{32,128}$/.test(token) || !/^[a-z0-9]+$/.test(platform) || !/^[a-z0-9]+$/.test(arch) || !version) {
         return res.status(404).end();
     }
     let latest;
