@@ -326,3 +326,22 @@ test('shared thread page escapes </script> in thread data', async () => {
     const page = await (await fetch(`${BASE}/thread/${identity.id}/thread-key-1`)).text();
     assert.ok(!page.includes('</script><script>alert(1)'));
 });
+
+test('update check serves the latest build only to clients with the token', async () => {
+    const tok = 'T'.repeat(40);
+    const dir = path.join(workdir, 'data', 'updates', tok, 'win32-x64');
+    fs.mkdirSync(dir, {recursive: true});
+    fs.writeFileSync(path.join(dir, 'latest.json'), JSON.stringify({version: '1.26.2005', path: ''}));
+    fs.writeFileSync(path.join(dir, 'RELEASES'), 'abc mailspring-1.26.2005-full.nupkg 1');
+
+    const update = await fetch(`${BASE}/update-check/${tok}/win32/x64/1.26.2004`);
+    assert.equal(update.status, 200);
+    assert.deepEqual(await update.json(), {url: `http://localhost:5101/updates/${tok}/win32-x64`, version: '1.26.2005', name: '1.26.2005'});
+    assert.equal((await fetch(`${BASE}/update-check/${tok}/win32/x64/1.26.2005`)).status, 204);
+    assert.equal((await fetch(`${BASE}/update-check/${'X'.repeat(40)}/win32/x64/1.26.2004`)).status, 404);
+    assert.equal((await fetch(`${BASE}/update-check/short/win32/x64/1.26.2004`)).status, 404);
+
+    assert.equal(await (await fetch(`${BASE}/updates/${tok}/win32-x64/RELEASES`)).text(), 'abc mailspring-1.26.2005-full.nupkg 1');
+    assert.equal((await fetch(`${BASE}/updates/${tok}/win32-x64/`)).status, 404);
+    assert.equal((await fetch(`${BASE}/updates/`)).status, 404);
+});

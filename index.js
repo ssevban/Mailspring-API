@@ -115,6 +115,41 @@ app.get('/', (req, res) => {
 app.get('/robots.txt', (req, res) => {
     res.sendFile(path.resolve('./static/robots.txt'));
 });
+
+// Client auto-update. CI uploads each build to data/updates/<token>/<platform>-<arch>/
+// with a latest.json ({version, path}); the token is a long random secret baked into the
+// client, so nobody without it can find or download a build.
+// Squirrel.Windows fetches <url>/RELEASES, Squirrel.Mac downloads <url> (a zip).
+const UPDATES_DIR = path.resolve('./data/updates');
+
+function compareVersions(a, b) {
+    const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+    for(let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const diff = (pa[i] || 0) - (pb[i] || 0);
+        if(diff) return diff;
+    }
+    return 0;
+}
+
+app.get('/update-check/:token/:platform/:arch/:version', (req, res) => {
+    const { token, platform, arch, version } = req.params;
+    if(!/^[A-Za-z0-9_-]{32,128}$/.test(token) || !/^[a-z0-9]+$/.test(platform) || !/^[a-z0-9]+$/.test(arch) || !/^\d+(\.\d+)*$/.test(version)) {
+        return res.status(404).end();
+    }
+    let latest;
+    try {
+        latest = JSON.parse(fs.readFileSync(path.join(UPDATES_DIR, token, `${platform}-${arch}`, 'latest.json'), 'utf8'));
+    } catch(err) {
+        return res.status(404).end();
+    }
+    if(compareVersions(latest.version, version) <= 0) {
+        return res.status(204).end();
+    }
+    const baseUrl = process.env.SHARE_URL || 'http://localhost:5101';
+    const url = [baseUrl, 'updates', token, `${platform}-${arch}`, latest.path].filter(Boolean).join('/');
+    res.json({url, version: latest.version, name: latest.version});
+});
+app.use('/updates', express.static(UPDATES_DIR, {index: false, redirect: false}));
 app.get(/\/signature-assets\/[a-z0-9_-]+\.(gif|png)$/i, (req, res) => {
     // Social icons for the composer's default signature templates. Self-hosted here
     // instead of hotlinking getmailspring.com, both to drop that dependency and so we
