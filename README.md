@@ -23,11 +23,26 @@ This repository is maintained by [ssevban](https://github.com/ssevban). It is a 
 - :heavy_check_mark: Grammar check (proxies to a [LanguageTool](https://languagetool.org/)-compatible server)
 - :heavy_check_mark: CalDAV/CardDAV host discovery (for the client's own calendar/contacts sync, which talks to your mail provider directly)
 - :heavy_check_mark: Account dashboard (`/dashboard`) - change password, view/revoke active sessions (blocked in `deploy/nginx.conf`, the client doesn't need it)
-- :x: Rich contact profile
-- :x: Company overviews
+- :x: Rich contact profile / Company overviews (see below)
 - :heavy_check_mark: Mailbox insights (sharing them is blocked in `deploy/nginx.conf`)
 - :heavy_check_mark: Translation (using Google Translate)
-- :x: Thread sharing (blocked in `deploy/nginx.conf`: shared pages would run third-party HTML on the API's origin)
+- :x: Thread sharing (implemented, but blocked in `deploy/nginx.conf`, see below)
+
+### Not supported
+- **Rich contact profile / Company overviews**: the client's sidebar asks
+  `/api/info-for-email-v2/<email>` for a person and company profile with the same fields as
+  Clearbit's enrichment API. Clearbit's free APIs were shut down in 2025 after the HubSpot acquisition
+  ([changelog](https://developers.hubspot.com/changelog/upcoming-sunset-of-clearbits-free-logo-api))
+  and the replacements need an API key or a subscription, so this server doesn't implement
+  the endpoint. The client handles the missing endpoint and shows only the contact's name
+  and email.
+- **Thread sharing**: `/api/save-public-asset` and `/thread/<identityId>/<key>` work, but a
+  shared thread is someone else's mail HTML rendered on the API's origin, next to the
+  session cookie, so `deploy/nginx.conf` returns 404 for `/thread/` and `/page/`. To enable
+  it, serve those paths from a separate host (e.g. `share.example.com`, its own nginx server
+  block that proxies only `/thread/` and `/page/`) and change the link the client builds,
+  which is hardcoded to `https://shared.getmailspring.com/thread/...` in
+  `app/internal_packages/thread-sharing/lib/main.tsx`.
 
 ## Install
 ### Docker image + host nginx (recommended)
